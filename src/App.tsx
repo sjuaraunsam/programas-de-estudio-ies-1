@@ -4,17 +4,19 @@ import {
   BookOpen, GraduationCap, Clock, User, Calendar, Info, Target, List,
   Settings, CheckCircle, BookMarked, FileText, LogIn, Search, Plus, Check,
   LayoutGrid, Table, ArrowUpDown, ArrowUp, ArrowDown, Upload, Loader2, X,
-  Shield, ChevronLeft,
+  Shield, ChevronLeft, ClipboardList, Sparkles,
 } from 'lucide-react';
 import { subjects } from './data';
-import { Subject, UserProfile, SubjectState, SubjectMeta, CurriculumSubject, getYearFromCareer, getSemesterFromTerm, getDurationFromTerm } from './types';
+import { Subject, UserProfile, SubjectState, SubjectMeta, CurriculumSubject, Quiz, QuizAttempt, getYearFromCareer, getSemesterFromTerm, getDurationFromTerm } from './types';
 import { auth, db, googleProvider, storage } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, setDoc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { availableSubjects, AvailableSubject } from './availableSubjects';
 import Sidebar from './components/Sidebar';
 import CorrelatividadesPage from './pages/CorrelatividadesPage';
+import { QuizBuilder, QuizAttemptModal } from './components/QuizModal';
+import AIAssistantPanel from './components/AIAssistantPanel';
 import { cn } from './lib/utils';
 
 // ---- Schedule helpers ----
@@ -56,20 +58,22 @@ const SortIcon = ({ column, sortConfig }: { column: keyof AvailableSubject; sort
   return sortConfig.direction === 'asc' ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />;
 };
 
-// ---- Subject selection modal tabs ----
+// ---- Subject detail tabs ----
 const tabs = [
   { id: 'overview' as const, label: 'Resumen', icon: Info },
   { id: 'contents' as const, label: 'Contenidos', icon: List },
   { id: 'methodology' as const, label: 'Metodología', icon: Settings },
   { id: 'evaluation' as const, label: 'Evaluación', icon: CheckCircle },
   { id: 'classes' as const, label: 'Clases', icon: FileText },
+  { id: 'quiz' as const, label: 'Quiz', icon: ClipboardList },
+  { id: 'ai' as const, label: 'IA', icon: Sparkles },
 ];
 
 export default function App() {
   // ---- Navigation ----
   const [activePage, setActivePage] = useState<string>('correlatividades');
   const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'contents' | 'methodology' | 'evaluation' | 'classes'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'contents' | 'methodology' | 'evaluation' | 'classes' | 'quiz' | 'ai'>('overview');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // ---- Auth ----
@@ -96,6 +100,13 @@ export default function App() {
   // ---- Notes ----
   const [notes, setNotes] = useState<Record<string, Record<string, string>>>({});
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // ---- Quizzes ----
+  const [quizzes, setQuizzes] = useState<Record<string, Quiz>>({});
+  const [quizAttempts, setQuizAttempts] = useState<Record<string, QuizAttempt>>({});
+  const [activeQuizSubject, setActiveQuizSubject] = useState<CurriculumSubject | null>(null);
+  const [isQuizBuilderOpen, setIsQuizBuilderOpen] = useState(false);
+  const [quizBuilderSubject, setQuizBuilderSubject] = useState<CurriculumSubject | null>(null);
 
   // ---- Auth listener ----
   useEffect(() => {
@@ -148,6 +159,26 @@ export default function App() {
     }, err => console.error('Error fetching programs:', err));
     return () => unsubscribe();
   }, [isAuthReady]);
+
+  // ---- Fetch quizzes ----
+  useEffect(() => {
+    if (!isAuthReady) return;
+    const quizzesRef = doc(db, 'settings/quizzes');
+    const unsubscribe = onSnapshot(quizzesRef, docSnap => {
+      if (docSnap.exists()) setQuizzes(docSnap.data() as Record<string, Quiz>);
+    }, err => console.error('Error fetching quizzes:', err));
+    return () => unsubscribe();
+  }, [isAuthReady]);
+
+  // ---- Fetch quiz attempts ----
+  useEffect(() => {
+    if (!user) return;
+    const attemptsRef = doc(db, `users/${user.uid}/curriculum/quizAttempts`);
+    const unsubscribe = onSnapshot(attemptsRef, docSnap => {
+      if (docSnap.exists()) setQuizAttempts(docSnap.data() as Record<string, QuizAttempt>);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   // ---- Fetch progress & meta from Firestore ----
   useEffect(() => {
@@ -380,6 +411,25 @@ export default function App() {
     }
   };
 
+  // ---- Quiz handlers ----
+  const handleSaveQuiz = async (subjectId: string, quiz: Quiz) => {
+    const updated = { ...quizzes, [subjectId]: quiz };
+    setQuizzes(updated);
+    try {
+      await setDoc(doc(db, 'settings/quizzes'), updated);
+    } catch (err) { console.error('Error saving quiz:', err); }
+  };
+
+  const handleQuizAttempt = async (subjectId: string, attempt: QuizAttempt) => {
+    const updated = { ...quizAttempts, [subjectId]: attempt };
+    setQuizAttempts(updated);
+    if (user) {
+      try {
+        await setDoc(doc(db, `users/${user.uid}/curriculum/quizAttempts`), updated);
+      } catch (err) { console.error('Error saving quiz attempt:', err); }
+    }
+  };
+
   // ---- Selected subject data ----
   const selectedSubject = selectedSubjectId ? subjects.find(s => s.id === selectedSubjectId) : null;
   const selectedFallbackSubject = selectedSubjectId && !selectedSubject
@@ -393,8 +443,10 @@ export default function App() {
         <CorrelatividadesPage
           subjects={curriculumSubjects}
           progress={progress}
+          quizzes={quizzes}
           onUpdateSubjectState={handleUpdateSubjectState}
           onSaveSubject={handleSaveSubjectMeta}
+          onOpenQuiz={s => setActiveQuizSubject(s)}
         />
       );
     }
@@ -431,6 +483,14 @@ export default function App() {
             activeTab={activeTab}
             onTabChange={setActiveTab}
             onBack={() => setActivePage('agenda')}
+            quiz={quizzes[selectedSubject.id]}
+            lastQuizAttempt={quizAttempts[selectedSubject.id]}
+            onQuizSubmit={attempt => handleQuizAttempt(selectedSubject.id, attempt)}
+            onOpenQuizBuilder={() => {
+              const cs = curriculumSubjects.find(s => s.id === selectedSubject.id);
+              if (cs) { setQuizBuilderSubject(cs); setIsQuizBuilderOpen(true); }
+            }}
+            relatedCurriculumSubjects={curriculumSubjects}
           />
         );
       }
@@ -550,6 +610,27 @@ export default function App() {
       <div className="flex-1 flex flex-col h-full overflow-hidden md:pt-0 pt-14">
         {renderPage()}
       </div>
+
+      {/* Quiz modals */}
+      <AnimatePresence>
+        {activeQuizSubject && quizzes[activeQuizSubject.id] && (
+          <QuizAttemptModal
+            subject={activeQuizSubject}
+            quiz={quizzes[activeQuizSubject.id]}
+            lastAttempt={quizAttempts[activeQuizSubject.id]}
+            onSubmit={attempt => handleQuizAttempt(activeQuizSubject.id, attempt)}
+            onClose={() => setActiveQuizSubject(null)}
+          />
+        )}
+        {isQuizBuilderOpen && quizBuilderSubject && (
+          <QuizBuilder
+            subject={quizBuilderSubject}
+            initialQuiz={quizzes[quizBuilderSubject.id]}
+            onSave={quiz => handleSaveQuiz(quizBuilderSubject.id, quiz)}
+            onClose={() => { setIsQuizBuilderOpen(false); setQuizBuilderSubject(null); }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Subject selection modal */}
       <AnimatePresence>
@@ -898,6 +979,11 @@ function ProgramaPage({
   activeTab,
   onTabChange,
   onBack,
+  quiz,
+  lastQuizAttempt,
+  onQuizSubmit,
+  onOpenQuizBuilder,
+  relatedCurriculumSubjects,
 }: {
   subject: Subject;
   programs: Record<string, string>;
@@ -908,9 +994,14 @@ function ProgramaPage({
   onNoteChange: (date: string, content: string) => void;
   onLogin: () => void;
   scheduleData: Record<string, any[]>;
-  activeTab: 'overview' | 'contents' | 'methodology' | 'evaluation' | 'classes';
+  activeTab: 'overview' | 'contents' | 'methodology' | 'evaluation' | 'classes' | 'quiz' | 'ai';
   onTabChange: (tab: typeof activeTab) => void;
   onBack: () => void;
+  quiz?: Quiz;
+  lastQuizAttempt?: QuizAttempt;
+  onQuizSubmit: (attempt: QuizAttempt) => void;
+  onOpenQuizBuilder: () => void;
+  relatedCurriculumSubjects: CurriculumSubject[];
 }) {
   return (
     <div className="h-full flex flex-col bg-stone-50 overflow-hidden">
@@ -1033,6 +1124,63 @@ function ProgramaPage({
                     ))}
                   </ul>
                 </section>
+              </div>
+            )}
+
+            {activeTab === 'quiz' && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-serif text-xl font-bold text-stone-900 flex items-center gap-2">
+                    <ClipboardList size={18} className="text-stone-500" /> Quiz
+                  </h3>
+                  {user && (
+                    <button
+                      onClick={onOpenQuizBuilder}
+                      className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-stone-600 border border-stone-200 hover:bg-stone-50 rounded-lg transition-colors"
+                    >
+                      <Settings size={13} /> {quiz ? 'Editar Quiz' : 'Crear Quiz'}
+                    </button>
+                  )}
+                </div>
+                {!quiz ? (
+                  <div className="text-center py-12 bg-stone-50 rounded-xl border border-stone-200">
+                    <ClipboardList size={40} className="mx-auto mb-3 text-stone-300" />
+                    <p className="text-stone-500 font-medium mb-1">Sin quiz disponible</p>
+                    <p className="text-sm text-stone-400">Un administrador puede crear un quiz para esta materia.</p>
+                  </div>
+                ) : (
+                  <div className="border border-stone-200 rounded-xl overflow-hidden bg-white" style={{ minHeight: 400 }}>
+                    <QuizAttemptModal
+                      subject={relatedCurriculumSubjects.find(s => s.id === subject.id) || {
+                        id: subject.id, name: subject.name, career: subject.career,
+                        year: 1, semester: 1, prerequisites: [], category: 'core' as const, duration: 'cuatrimestral' as const, prof: subject.professor,
+                      }}
+                      quiz={quiz}
+                      lastAttempt={lastQuizAttempt}
+                      onSubmit={onQuizSubmit}
+                      onClose={() => onTabChange('overview')}
+                      inline
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'ai' && (
+              <div className="h-[520px] border border-stone-200 rounded-xl overflow-hidden bg-white">
+                <AIAssistantPanel
+                  subject={{
+                    id: subject.id,
+                    name: subject.name,
+                    career: subject.career,
+                    foundation: subject.foundation,
+                    objectives: subject.objectives,
+                    methodology: subject.methodology,
+                  }}
+                  prerequisites={relatedCurriculumSubjects.filter(s =>
+                    relatedCurriculumSubjects.find(x => x.id === subject.id)?.prerequisites.includes(s.id)
+                  )}
+                />
               </div>
             )}
 

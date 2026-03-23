@@ -47,6 +47,27 @@ export interface CurriculumSubject {
   duration: 'cuatrimestral' | 'anual';
 }
 
+// ---- Quiz types ----
+export interface QuizQuestion {
+  id: string;
+  text: string;
+  options: { id: string; label: string }[];
+  correctOptionId: string;
+}
+
+export interface Quiz {
+  passingScore: number; // 1-10
+  questions: QuizQuestion[];
+}
+
+export interface QuizAttempt {
+  score: number;
+  passed: boolean;
+  completedAt: string;
+  answersByQuestionId: Record<string, string>;
+}
+
+// ---- Helpers ----
 export const getYearFromCareer = (career: string): number => {
   const match = career.match(/(\d)/);
   return match ? parseInt(match[1]) : 1;
