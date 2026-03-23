@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (from Firebase Auth)
+    // Fields:
+    //   - email: string (required) - User's email address
+    //   - name: string (required) - User's display name
+    //   - createdAt: timestamp (required, immutable) - Creation time
+    //
+    // Collection: users/{userId}/notes
+    // Document ID: subjectId
+    // Fields:
+    //   - subjectId: string (required, immutable) - Subject ID
+    //   - notes: map (required) - Map of date strings (YYYY-MM-DD) to note content
+    //   - updatedAt: timestamp (required) - Last update time
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser() {
+      return hasOnlyAllowedFields(['email', 'name', 'createdAt']) &&
+             hasRequiredFields(['email', 'name', 'createdAt']) &&
+             isValidEmail(request.resource.data.email) &&
+             request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() < 100 &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidSubjectNotes() {
+      return hasOnlyAllowedFields(['subjectId', 'notes', 'updatedAt']) &&
+             hasRequiredFields(['subjectId', 'notes', 'updatedAt']) &&
+             request.resource.data.subjectId is string && request.resource.data.subjectId.size() > 0 && request.resource.data.subjectId.size() < 100 &&
+             request.resource.data.notes is map &&
+             request.resource.data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser() && request.resource.data.createdAt == resource.data.createdAt;
+      
+      match /notes/{subjectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidSubjectNotes() && request.resource.data.subjectId == subjectId;
+        allow update: if isOwner(userId) && isValidSubjectNotes() && request.resource.data.subjectId == resource.data.subjectId;
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

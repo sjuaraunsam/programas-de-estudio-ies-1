@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "User's email address."
+        },
+        "name": {
+          "type": "string",
+          "description": "User's display name."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of user creation."
+        }
+      },
+      "required": ["email", "name", "createdAt"]
+    },
+    "SubjectNotes": {
+      "title": "SubjectNotes",
+      "description": "Notes for a specific subject, keyed by date.",
+      "type": "object",
+      "properties": {
+        "subjectId": {
+          "type": "string",
+          "description": "The ID of the subject."
+        },
+        "notes": {
+          "type": "object",
+          "description": "Map of date strings (YYYY-MM-DD) to note content.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last update."
+        }
+      },
+      "required": ["subjectId", "notes", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "User profiles."
+    },
+    "/users/{userId}/notes/{subjectId}": {
+      "schema": {
+        "$ref": "#/entities/SubjectNotes"
+      },
+      "description": "User's notes for a specific subject."
+    }
+  }
+}
