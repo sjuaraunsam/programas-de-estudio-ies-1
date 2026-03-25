@@ -27,7 +27,7 @@ export default function Sidebar({
   const menuItems = [
     { id: 'correlatividades', label: 'Correlatividades', icon: GraduationCap },
     { id: 'agenda', label: 'Agenda de Horarios', icon: Calendar },
-    { id: 'programas', label: 'Programas', icon: BookOpen },
+    { id: 'programas', label: 'Materias', icon: BookOpen },
     { id: 'admin', label: 'Panel Admin', icon: Shield },
   ];
 

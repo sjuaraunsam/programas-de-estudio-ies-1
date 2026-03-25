@@ -503,44 +503,68 @@ export default function App() {
           />
         );
       }
-      // No subject selected: show list of selected subjects
+      // No subject selected: show list of enrolled subjects
+      const enrolledIds = userProfile?.selectedSubjects || [];
       return (
         <div className="h-full flex flex-col bg-stone-50">
-          <header className="bg-white border-b border-stone-200 shrink-0 px-6 h-16 flex items-center">
+          <header className="bg-white border-b border-stone-200 shrink-0 px-6 h-16 flex items-center justify-between">
             <h1 className="font-serif font-bold text-lg text-stone-900 flex items-center gap-3">
               <div className="w-8 h-8 bg-stone-900 rounded-lg flex items-center justify-center text-white">
                 <BookOpen size={18} />
               </div>
-              Programas de Estudio
+              Mis Materias
             </h1>
+            <span className="text-xs text-stone-400">
+              {enrolledIds.length} materia{enrolledIds.length !== 1 ? 's' : ''} inscripta{enrolledIds.length !== 1 ? 's' : ''}
+            </span>
           </header>
           <main className="flex-1 overflow-auto p-6">
-            <div className="max-w-2xl mx-auto space-y-3">
-              {(userProfile?.selectedSubjects || []).length === 0 ? (
-                <div className="text-center py-12 text-stone-400">
-                  <BookOpen size={48} className="mx-auto mb-4 opacity-30" />
-                  <p>No tenés materias seleccionadas.</p>
+            <div className="max-w-2xl mx-auto space-y-2">
+              {enrolledIds.length === 0 ? (
+                <div className="text-center py-16 text-stone-400">
+                  <BookOpen size={48} className="mx-auto mb-4 opacity-20" />
+                  <p className="font-medium text-stone-500 mb-1">No tenés materias configuradas</p>
+                  <p className="text-sm">Usá "Configurar Materias" en el panel lateral para agregar tus materias.</p>
                 </div>
               ) : (
-                (userProfile?.selectedSubjects || []).map(id => {
+                enrolledIds.map(id => {
                   const s = availableSubjects.find(x => x.id === id);
                   if (!s) return null;
                   const hasPDF = !!programs[id];
+                  const hasQuiz = !!quizzes[id];
+                  const lastAttempt = quizAttempts[id];
                   return (
                     <button
                       key={id}
                       onClick={() => { setSelectedSubjectId(id); setActiveTab('overview'); }}
-                      className="w-full text-left p-4 bg-white rounded-xl border border-stone-200 hover:border-stone-300 hover:shadow-sm transition-all flex items-center justify-between gap-4"
+                      className="w-full text-left p-4 bg-white rounded-xl border border-stone-200 hover:border-stone-300 hover:shadow-sm transition-all flex items-center justify-between gap-4 group"
                     >
-                      <div>
-                        <p className="font-medium text-stone-900">{s.name}</p>
-                        <p className="text-xs text-stone-400 mt-0.5">{s.career} · {s.prof}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-stone-900 truncate">{s.name}</p>
+                        <p className="text-xs text-stone-400 mt-0.5">{s.career} · {s.prof} · {s.day} {s.time}</p>
                       </div>
-                      {hasPDF && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
-                          PDF
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {lastAttempt && (
+                          <span className={cn(
+                            'text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full border',
+                            lastAttempt.passed
+                              ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                              : 'text-orange-700 bg-orange-50 border-orange-200'
+                          )}>
+                            {lastAttempt.score}/10
+                          </span>
+                        )}
+                        {hasQuiz && !lastAttempt && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-1 rounded-full">
+                            Quiz
+                          </span>
+                        )}
+                        {hasPDF && (
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 bg-stone-100 border border-stone-200 px-2 py-1 rounded-full">
+                            PDF
+                          </span>
+                        )}
+                      </div>
                     </button>
                   );
                 })
